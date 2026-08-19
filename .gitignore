@@ -1,0 +1,12 @@
+# Secrets / local Node-RED state
+flows_cred.json
+.env
+.node-red/
+
+# Dependencies / logs
+node_modules/
+*.log
+
+# OS / editor
+.DS_Store
+.vscode/

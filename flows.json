@@ -1,0 +1,400 @@
+[
+  {
+    "id": "tab_novait",
+    "type": "tab",
+    "label": "NovaIT RedBot Test",
+    "disabled": false,
+    "info": "Telegram bot test task: menu, calculator, NBU rates, logging"
+  },
+  {
+    "id": "tg_bot_cfg",
+    "type": "chatbot-telegram-node",
+    "botname": "NovaIT Test Bot",
+    "polling": "1000",
+    "store": "",
+    "debug": false,
+    "skipMediaFiles": true,
+    "webHook": "",
+    "connectMode": "polling",
+    "storeMessages": true,
+    "enableMissionControl": false,
+    "inspectMessages": true,
+    "chatbotId": ""
+  },
+  {
+    "id": "tg_receiver",
+    "type": "chatbot-telegram-receive",
+    "z": "tab_novait",
+    "bot": "tg_bot_cfg",
+    "botProduction": "",
+    "name": "Telegram Receiver",
+    "x": 140,
+    "y": 180,
+    "wires": [
+      [
+        "router_fn"
+      ],
+      []
+    ]
+  },
+  {
+    "id": "router_fn",
+    "type": "function",
+    "z": "tab_novait",
+    "name": "Router + session state",
+    "func": "const chatId = msg && msg.payload ? msg.payload.chatId : undefined;\nconst rawContent = msg && msg.payload ? msg.payload.content : undefined;\nconst text = typeof rawContent === 'string' ? rawContent.trim() : '';\nconst stateKey = `state_${chatId ?? 'unknown'}`;\nconst state = flow.get(stateKey) || null;\n\nfunction log(step, summary) {\n    node.warn(`${new Date().toISOString()} | chat=${chatId ?? 'unknown'} | ${step} | ${summary}`);\n}\n\nlog('router:input_received', `state=${state ?? 'none'} content=${JSON.stringify(text.slice(0, 80))}`);\n\n// /start must work from any branch. Telegram can append a payload to /start.\nif (/^\\/start(?:@\\w+)?(?:\\s.*)?$/i.test(text)) {\n    flow.set(stateKey, null);\n    log('menu:opened', 'source=/start');\n    return [msg, null, null, null, null, null];\n}\n\nif (/^\\/menu(?:@\\w+)?$/i.test(text) || text === 'back' || text === 'menu') {\n    flow.set(stateKey, null);\n    log('menu:opened', 'source=back_or_menu');\n    return [msg, null, null, null, null, null];\n}\n\nif (text === 'calc') {\n    flow.set(stateKey, 'calc');\n    log('calc:started', 'calculator mode enabled');\n    return [null, msg, null, null, null, null];\n}\n\nif (text === 'currency') {\n    flow.set(stateKey, null);\n    log('nbu:selected', 'currency menu item');\n    return [null, null, null, msg, null, null];\n}\n\nif (text === 'about') {\n    flow.set(stateKey, null);\n    log('about:opened', 'about menu item');\n    return [null, null, null, null, msg, null];\n}\n\n// While in calculator mode, every other inbound message is treated as calculator input.\n// Empty/undefined content is deliberately passed to validation too.\nif (state === 'calc') {\n    return [null, null, msg, null, null, null];\n}\n\nlog('fallback:unknown_input', `content=${JSON.stringify(text.slice(0, 80))}`);\nreturn [null, null, null, null, null, msg];",
+    "outputs": 6,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 380,
+    "y": 180,
+    "wires": [
+      [
+        "main_menu"
+      ],
+      [
+        "calc_prompt"
+      ],
+      [
+        "calculator_fn"
+      ],
+      [
+        "prepare_nbu_fn"
+      ],
+      [
+        "about_buttons"
+      ],
+      [
+        "fallback_message"
+      ]
+    ]
+  },
+  {
+    "id": "main_menu",
+    "type": "chatbot-inline-buttons",
+    "z": "tab_novait",
+    "name": "Main menu",
+    "buttons": [
+      {
+        "type": "postback",
+        "label": "🧮 Калькулятор",
+        "value": "calc",
+        "answer": "",
+        "alert": false,
+        "style": ""
+      },
+      {
+        "type": "newline"
+      },
+      {
+        "type": "postback",
+        "label": "💱 Курс валют",
+        "value": "currency",
+        "answer": "",
+        "alert": false,
+        "style": ""
+      },
+      {
+        "type": "newline"
+      },
+      {
+        "type": "postback",
+        "label": "ℹ️ Про бота",
+        "value": "about",
+        "answer": "",
+        "alert": false,
+        "style": ""
+      }
+    ],
+    "message": "Оберіть дію:",
+    "trackMessage": false,
+    "outputs": 1,
+    "x": 900,
+    "y": 80,
+    "wires": [
+      [
+        "tg_sender"
+      ]
+    ]
+  },
+  {
+    "id": "calc_prompt",
+    "type": "chatbot-inline-buttons",
+    "z": "tab_novait",
+    "name": "Calculator prompt",
+    "buttons": [
+      {
+        "type": "postback",
+        "label": "⬅️ Назад",
+        "value": "back",
+        "answer": "",
+        "alert": false,
+        "style": ""
+      }
+    ],
+    "message": "🧮 Надішліть приклад одним повідомленням.\nФормат: 12 + 7\nДоступні операції: +  -  *  /  ×  ÷\nМаксимум 60 символів.",
+    "trackMessage": false,
+    "outputs": 1,
+    "x": 900,
+    "y": 140,
+    "wires": [
+      [
+        "tg_sender"
+      ]
+    ]
+  },
+  {
+    "id": "calculator_fn",
+    "type": "function",
+    "z": "tab_novait",
+    "name": "Calculator (JS)",
+    "func": "const chatId = msg && msg.payload ? msg.payload.chatId : undefined;\nconst rawContent = msg && msg.payload ? msg.payload.content : undefined;\nconst raw = typeof rawContent === 'string' ? rawContent.trim() : '';\nconst stateKey = `state_${chatId ?? 'unknown'}`;\nconst MAX_LENGTH = 60;\n\nfunction log(step, summary) {\n    node.warn(`${new Date().toISOString()} | chat=${chatId ?? 'unknown'} | ${step} | ${summary}`);\n}\n\nfunction outgoing(text) {\n    msg.payload = {\n        type: 'message',\n        content: text,\n        chatId: chatId,\n        inbound: false\n    };\n    return msg;\n}\n\nlog('calc:input_received', `value=${JSON.stringify(raw.slice(0, MAX_LENGTH + 1))}`);\n\nif (!raw) {\n    log('calc:validation_error', 'reason=empty');\n    return [null, outgoing('⚠️ Порожнє повідомлення. Введіть приклад, наприклад: 12 + 7')];\n}\n\nif (raw.length > MAX_LENGTH) {\n    log('calc:validation_error', `reason=too_long length=${raw.length}`);\n    return [null, outgoing(`⚠️ Ввід занадто довгий (${raw.length} символів). Максимум — ${MAX_LENGTH}.` )];\n}\n\n// Decimal separator is a dot. Supports unary signs: -5 + 2, 5 * -3.\nconst match = raw.match(/^([+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+))\\s*([+\\-*/×÷])\\s*([+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+))$/);\n\nif (!match) {\n    log('calc:validation_error', `reason=not_numeric_or_bad_format value=${JSON.stringify(raw.slice(0, 60))}`);\n    return [null, outgoing('⚠️ Не вдалося розпізнати приклад. Використайте формат: 12 + 7. Лише числа та +, -, *, /, ×, ÷.')];\n}\n\nconst a = Number(match[1]);\nconst op = match[2];\nconst b = Number(match[3]);\n\nif (!Number.isFinite(a) || !Number.isFinite(b)) {\n    log('calc:validation_error', 'reason=non_finite_number');\n    return [null, outgoing('⚠️ Одне з чисел некоректне. Спробуйте простіший приклад.')];\n}\n\nif ((op === '/' || op === '÷') && b === 0) {\n    log('calc:validation_error', 'reason=division_by_zero');\n    return [null, outgoing('⚠️ Ділити на нуль не можна. Введіть інший приклад.')];\n}\n\nlet result;\nswitch (op) {\n    case '+': result = a + b; break;\n    case '-': result = a - b; break;\n    case '*':\n    case '×': result = a * b; break;\n    case '/':\n    case '÷': result = a / b; break;\n    default:\n        log('calc:error', `reason=unsupported_operator operator=${op}`);\n        return [null, outgoing('⚠️ Непідтримувана операція.')];\n}\n\nif (!Number.isFinite(result)) {\n    log('calc:error', 'reason=result_not_finite');\n    return [null, outgoing('⚠️ Результат не може бути обчислений.')];\n}\n\n// Avoid noisy floating point tails in the user-facing result.\nconst normalized = Number.isInteger(result) ? result : Number(result.toFixed(10));\nflow.set(stateKey, null);\nlog('calc:success', `expression=${a}${op}${b} result=${normalized}`);\nreturn [outgoing(`✅ ${a} ${op} ${b} = ${normalized}`), null];",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 660,
+    "y": 220,
+    "wires": [
+      [
+        "send_then_menu"
+      ],
+      [
+        "send_then_calc_retry"
+      ]
+    ]
+  },
+  {
+    "id": "calc_retry",
+    "type": "chatbot-inline-buttons",
+    "z": "tab_novait",
+    "name": "Calculator retry / Back",
+    "buttons": [
+      {
+        "type": "postback",
+        "label": "⬅️ Назад",
+        "value": "back",
+        "answer": "",
+        "alert": false,
+        "style": ""
+      }
+    ],
+    "message": "Спробуйте ще раз або поверніться в меню.",
+    "trackMessage": false,
+    "outputs": 1,
+    "x": 1180,
+    "y": 260,
+    "wires": [
+      [
+        "tg_sender"
+      ]
+    ]
+  },
+  {
+    "id": "prepare_nbu_fn",
+    "type": "function",
+    "z": "tab_novait",
+    "name": "Prepare NBU request",
+    "func": "const chatId = msg && msg.payload ? msg.payload.chatId : undefined;\n\nfunction log(step, summary) {\n    node.warn(`${new Date().toISOString()} | chat=${chatId ?? 'unknown'} | ${step} | ${summary}`);\n}\n\n// Set to true only while reproducing the required API-failure log scenario.\nconst FORCE_NBU_FAILURE = false;\n\nmsg.redbotChatId = chatId;\nmsg.nbuStartedAt = Date.now();\nmsg.method = 'GET';\nmsg.url = FORCE_NBU_FAILURE\n    ? 'https://bank.gov.ua/NBUStatService/v1/THIS_ENDPOINT_IS_BROKEN?json'\n    : 'https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?json';\nmsg.payload = '';\n\nlog('nbu:request_sent', `url=${msg.url}`);\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 670,
+    "y": 340,
+    "wires": [
+      [
+        "nbu_http"
+      ]
+    ]
+  },
+  {
+    "id": "nbu_http",
+    "type": "http request",
+    "z": "tab_novait",
+    "name": "GET NBU rates",
+    "method": "use",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "insecureHTTPParser": false,
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 900,
+    "y": 340,
+    "wires": [
+      [
+        "parse_nbu_fn"
+      ]
+    ]
+  },
+  {
+    "id": "parse_nbu_fn",
+    "type": "function",
+    "z": "tab_novait",
+    "name": "Parse USD + EUR",
+    "func": "const chatId = msg.redbotChatId;\nconst elapsed = msg.nbuStartedAt ? Date.now() - msg.nbuStartedAt : null;\n\nfunction log(step, summary) {\n    node.warn(`${new Date().toISOString()} | chat=${chatId ?? 'unknown'} | ${step} | ${summary}`);\n}\n\nfunction outgoing(text) {\n    msg.payload = {\n        type: 'message',\n        content: text,\n        chatId: chatId,\n        inbound: false\n    };\n    return msg;\n}\n\nconst status = Number(msg.statusCode || 0);\nif (status < 200 || status >= 300) {\n    log('nbu:error', `http_status=${status || 'unknown'} elapsed_ms=${elapsed ?? 'unknown'}`);\n    return [null, outgoing('⚠️ Сервіс курсу валют тимчасово недоступний. Спробуйте пізніше або поверніться в меню.')];\n}\n\nconst data = msg.payload;\nif (!Array.isArray(data)) {\n    log('nbu:error', `reason=unexpected_response_type status=${status} elapsed_ms=${elapsed ?? 'unknown'}`);\n    return [null, outgoing('⚠️ НБУ повернув неочікувану відповідь. Спробуйте пізніше.')];\n}\n\nconst usd = data.find(item => item && item.cc === 'USD');\nconst eur = data.find(item => item && item.cc === 'EUR');\n\nif (!usd || !eur || typeof usd.rate !== 'number' || typeof eur.rate !== 'number') {\n    log('nbu:error', `reason=usd_or_eur_missing status=${status}`);\n    return [null, outgoing('⚠️ Не вдалося знайти курс USD або EUR у відповіді НБУ.')];\n}\n\nconst date = usd.exchangedate || eur.exchangedate || 'невідомо';\nlog('nbu:success', `USD=${usd.rate} EUR=${eur.rate} date=${date} elapsed_ms=${elapsed ?? 'unknown'}`);\n\nreturn [outgoing(\n    `💱 Курс НБУ\\n` +\n    `USD: 1 USD = ${usd.rate.toFixed(4)} UAH\\n` +\n    `EUR: 1 EUR = ${eur.rate.toFixed(4)} UAH\\n` +\n    `Дата: ${date}`\n), null];",
+    "outputs": 2,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1120,
+    "y": 340,
+    "wires": [
+      [
+        "send_then_menu"
+      ],
+      [
+        "send_then_menu"
+      ]
+    ]
+  },
+  {
+    "id": "nbu_catch",
+    "type": "catch",
+    "z": "tab_novait",
+    "name": "Catch NBU transport error",
+    "scope": [
+      "nbu_http"
+    ],
+    "uncaught": false,
+    "x": 900,
+    "y": 400,
+    "wires": [
+      [
+        "nbu_error_fn"
+      ]
+    ]
+  },
+  {
+    "id": "nbu_error_fn",
+    "type": "function",
+    "z": "tab_novait",
+    "name": "NBU friendly error",
+    "func": "const chatId = msg.redbotChatId || (msg.payload && msg.payload.chatId);\nconst reason = msg && msg.error && msg.error.message ? msg.error.message : 'transport_error';\nnode.warn(`${new Date().toISOString()} | chat=${chatId ?? 'unknown'} | nbu:error | reason=${String(reason).slice(0, 160)}`);\nmsg.payload = {\n    type: 'message',\n    content: '⚠️ Не вдалося зв’язатися із сервісом НБУ. Спробуйте пізніше.',\n    chatId: chatId,\n    inbound: false\n};\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 1130,
+    "y": 400,
+    "wires": [
+      [
+        "send_then_menu"
+      ]
+    ]
+  },
+  {
+    "id": "about_buttons",
+    "type": "chatbot-inline-buttons",
+    "z": "tab_novait",
+    "name": "About + Back",
+    "buttons": [
+      {
+        "type": "postback",
+        "label": "⬅️ Назад",
+        "value": "back",
+        "answer": "",
+        "alert": false,
+        "style": ""
+      }
+    ],
+    "message": "ℹ️ Це тестовий Telegram-бот для NovaIT. Він демонструє меню, JavaScript-калькулятор, HTTP-запит до API НБУ, обробку помилок і діагностичне логування.",
+    "trackMessage": false,
+    "outputs": 1,
+    "x": 900,
+    "y": 460,
+    "wires": [
+      [
+        "tg_sender"
+      ]
+    ]
+  },
+  {
+    "id": "fallback_message",
+    "type": "chatbot-message",
+    "z": "tab_novait",
+    "name": "Unknown input fallback",
+    "message": [
+      {
+        "message": "🤔 Я не розумію цю команду. Скористайтеся кнопками нижче або введіть /menu."
+      }
+    ],
+    "language": "none",
+    "x": 690,
+    "y": 520,
+    "wires": [
+      [
+        "send_then_menu"
+      ]
+    ]
+  },
+  {
+    "id": "send_then_menu",
+    "type": "chatbot-telegram-send",
+    "z": "tab_novait",
+    "bot": "tg_bot_cfg",
+    "botProduction": "",
+    "track": false,
+    "passThrough": true,
+    "errorOutput": false,
+    "name": "Send → main menu",
+    "outputs": 1,
+    "x": 1430,
+    "y": 340,
+    "wires": [
+      [
+        "main_menu"
+      ]
+    ]
+  },
+  {
+    "id": "send_then_calc_retry",
+    "type": "chatbot-telegram-send",
+    "z": "tab_novait",
+    "bot": "tg_bot_cfg",
+    "botProduction": "",
+    "track": false,
+    "passThrough": true,
+    "errorOutput": false,
+    "name": "Send → retry",
+    "outputs": 1,
+    "x": 920,
+    "y": 260,
+    "wires": [
+      [
+        "calc_retry"
+      ]
+    ]
+  },
+  {
+    "id": "tg_sender",
+    "type": "chatbot-telegram-send",
+    "z": "tab_novait",
+    "bot": "tg_bot_cfg",
+    "botProduction": "",
+    "track": false,
+    "passThrough": false,
+    "errorOutput": false,
+    "name": "Telegram Sender",
+    "outputs": 0,
+    "x": 1440,
+    "y": 120,
+    "wires": []
+  }
+]
