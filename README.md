@@ -37,13 +37,12 @@ The default Node-RED port is **1880**. The Telegram bot uses polling, so no publ
 
 ## Time spent
 
-**REPLACE WITH YOUR REAL TIME**, for example: `3 h 35 min`.
+2 h 25 min.
 
 ## Checklist
 
-> Change runtime-dependent ⚠️ items to ✅ only after you verify them locally.
 
-- ⚠️ RedBot deployed, bot responds to `/start`
+- ✅ RedBot deployed, bot responds to `/start`
 - ✅ 3-item inline menu + Back
 - ✅ Unknown-input fallback
 - ✅ Calculator logic implemented
@@ -52,9 +51,9 @@ The default Node-RED port is **1880**. The Telegram bot uses polling, so no publ
 - ✅ Empty and too-long input handled
 - ✅ NBU USD/EUR exchange-rate branch implemented
 - ✅ API-unavailable handling implemented
-- ⚠️ Successful calculation log captured in `logs.md`
-- ⚠️ Invalid-input log captured in `logs.md`
-- ⚠️ API-failure log captured in `logs.md`
+- ✅ Successful calculation log captured in `logs.md`
+- ✅ Invalid-input log captured in `logs.md`
+- ✅ API-failure log captured in `logs.md`
 - ✅ README in English
 
 ## Security
